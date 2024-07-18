@@ -6,7 +6,7 @@ import time
 import os
 import csv
 import pandas as pd
-import altair as alt
+import plotly.graph_objects as go
 import zipfile
 from io import BytesIO
 
@@ -68,6 +68,7 @@ def hex_to_decimal_and_save(data_packet):
         'Decimal Value': decimal_values
     })
 
+    print(df)
     if not os.path.exists("csv"):
         os.makedirs("csv")
     
@@ -85,6 +86,8 @@ def create_zip_file(folder_path):
             for file in files:
                 zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), folder_path))
     return s.getvalue()
+
+st.set_page_config(layout="wide")
 
 if "sampling_status" not in st.session_state:
     st.session_state["sampling_status"] = "off"
@@ -220,20 +223,36 @@ st.title('数据可视化')
 
 step = st.number_input("输入纵坐标单位长度:", min_value=0.0000, max_value=20.0000, value=0.0000, step=0.0001, format="%.4f")
 
+# 按钮用于触发图表绘制
 if st.button('Convert'):
-    result_df = st.session_state["df_data"]
+    # 获取会话状态中的数据
+    result_df = st.session_state.get("df_data", None)
+    
+    # 检查数据是否存在
     if result_df is not None:
-        data_chart = alt.Chart(result_df).mark_line().encode(
-            x=alt.X('Index:Q', title='Index', scale=alt.Scale(zero=False)),
-            y=alt.Y('Decimal Value:Q', title='Decimal Value', scale=alt.Scale(nice=True))
-        ).properties(
-            width=800,
-            height=400
+        
+        # 创建 Plotly 折线图
+        fig = go.Figure(data=go.Scatter(x=result_df["Index"], y=result_df["Decimal Value"], mode='lines', name='lines'))
+        
+        # 设置 x 轴和 y 轴
+        fig.update_layout(
+            title='Decimal Value over Index',
+            xaxis_title='Index',
+            yaxis_title='Decimal Value',
+            xaxis=dict(tickmode='linear'),
+            yaxis=dict(tickformat='.4f')  # 保留到小数点后四位
         )
-
+        
+        # 如果存在 step 变量并且大于 0，设置 y 轴的范围
+        step = st.session_state.get("step", 0)
         if step > 0:
-            data_chart = data_chart.encode(y=alt.Y('Decimal Value:Q', scale=alt.Scale(nice=True, domain=[0, step * len(result_df) // 10])))
-
-        st.altair_chart(data_chart, use_container_width=True)
-    else:
+            max_y = step * len(result_df) // 10
+            fig.update_yaxes(range=[13, max_y])
+        
+        # 在 Streamlit 应用中显示图表
+        st.plotly_chart(fig, use_container_width=True)
+    else: 
+        # 如果没有数据，显示警告信息
         st.warning("请先发送数据")
+else:
+    st.info("点击上方按钮来绘制折线图")
