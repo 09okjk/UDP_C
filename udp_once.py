@@ -30,7 +30,7 @@ def parse_response(response):
         channel = hex_response[6:8] if len(hex_response) > 8 else '00'
         length = hex_response[8:16] if len(hex_response) > 16 else '00000000'
         mac = hex_response[16:28] if len(hex_response) > 28 else '000000000000'
-        ip = hex_response[28:40] if len(hex_response) > 40 else '00000000'
+        ip = hex_response[28:40] if len(hex_response) > 60 else '00000000'
         return header, command, channel, length, mac, ip
     elif command == '04':
         switch_status = hex_response[6:8]
