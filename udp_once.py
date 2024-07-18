@@ -170,19 +170,7 @@ with st.sidebar:
 
     col5, col6 = st.columns(2)
     with col5:
-        if st.button('清空原始数据文件'):
-            if os.path.exists("data.txt"):
-                os.remove("data.txt")
-                st.success("数据文件已清空")
-
-        if st.button('清空csv目录下所有文件'):
-            folder_path = "csv"
-            if os.path.exists(folder_path):
-                for file in os.listdir(folder_path):
-                    os.remove(os.path.join(folder_path, file))
-                st.success("CSV目录下的所有文件已清空")
-
-    with col6:
+        
         if os.path.exists("data.txt"):
             with open("data.txt", "rb") as file:
                 st.download_button(
@@ -194,20 +182,33 @@ with st.sidebar:
         else:
             st.warning("数据文件不存在")
 
-        if st.session_state["csv_name"]:
-            csv_path = f"csv/{st.session_state['csv_name']}"
-            if os.path.exists(csv_path):
-                with open(csv_path, "rb") as file:
-                    st.download_button(
-                        label="下载当前CSV文件",
-                        data=file,
-                        file_name=st.session_state["csv_name"],
-                        mime="text/csv"
-                    )
-            else:
-                st.warning("当前CSV文件不存在")
+        if st.button('清空原始数据文件'):
+            if os.path.exists("data.txt"):
+                os.remove("data.txt")
+                st.success("数据文件已清空")
 
+    with col6:
+
+        csv_path = f"csv/{st.session_state['csv_name']}"
+        if os.path.exists(csv_path):
+            with open(csv_path, "rb") as file:
+                st.download_button(
+                    label="下载当前CSV文件",
+                    data=file,
+                    file_name=st.session_state["csv_name"],
+                    mime="text/csv"
+                )
+        else:
+            st.info("当前CSV文件待生成")
+        
+        if st.button('清空csv目录下所有文件'):
+            folder_path = "csv"
+            if os.path.exists(folder_path):
+                for file in os.listdir(folder_path):
+                    os.remove(os.path.join(folder_path, file))
+                st.success("CSV目录下的所有文件已清空")
         folder_path = "csv"
+        
         if os.path.isdir(folder_path):
             zip_bytes = create_zip_file(folder_path)
             st.download_button(
