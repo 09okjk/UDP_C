@@ -4,7 +4,6 @@ from datetime import datetime
 import binascii
 import time
 import os
-import csv
 import pandas as pd
 import plotly.graph_objects as go
 import zipfile
@@ -12,13 +11,19 @@ from io import BytesIO
 
 def send_and_receive_udp(sock, data, address, timeout):
     sock.settimeout(timeout)
+    all_data = b''
+    buffer_size = 1024
     try:
         st.write(f"Sending to address: {address}")
         sock.sendto(data, address)
-        response, address = sock.recvfrom(1024)
+        while True:
+            response, _ = sock.recvfrom(buffer_size)
+            all_data += response
+            if len(response) < buffer_size:
+                break
         st.write(f"Request: {binascii.hexlify(data).decode()}")
-        st.write(f"Response: {binascii.hexlify(response).decode()}")
-        return response
+        st.write(f"Response: {binascii.hexlify(all_data).decode()}")
+        return all_data
     except socket.timeout:
         st.warning(f'等待时间超过 {timeout} 秒，未收到回复，请重试。')
         return None
@@ -49,7 +54,7 @@ def log_data_to_file(timestamp, channel, length, data):
 
 def run_sampling(sock, address, f_header):
     # fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
-    fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + b'\x00\x00\x00\xe0' + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
+    fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
     fourth_response = send_and_receive_udp(sock, fourth_dialogue_data, address, st.session_state["timeout"])
     if fourth_response:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -90,12 +95,23 @@ def create_zip_file(folder_path):
                 zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), folder_path))
     return s.getvalue()
 
-def send_collect_option(new_status):
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
-        sock.bind(('0.0.0.0', 8080))
+def send_collect_option(new_status,sock):
         third_dialogue_data = f_header + b'\x04' + bytes.fromhex(switch_dict[new_status])
         status = parse_response(send_and_receive_udp(sock, third_dialogue_data, (ip_address, port), st.session_state["timeout"]))
         st.session_state["sampling_status"] = "on" if status == "00" else "off"
+
+def send_data_32(sock):
+    hex_channel = '{:02x}'.format(channel)
+    hex_length = '{:08x}'.format(length)
+    st.session_state["channel"] = ''.join([hex_channel[i:i+2] for i in range(0, len(hex_channel), 2)])
+    st.session_state["length"] = ''.join([hex_length[i:i+2] for i in range(0, len(hex_length), 2)])
+
+    second_dialogue_data = f_header + b'\x03' + bytes.fromhex(hz_dict[sample_rate])
+    second_response = send_and_receive_udp(sock, second_dialogue_data, (ip_address, port), timeout)
+    if second_response:
+        st.session_state["df_data"] = run_sampling(sock, (ip_address, port), f_header)
+    else:
+        st.warning("采集频率设置失败")
 
 st.set_page_config(layout="wide")
 
@@ -109,6 +125,10 @@ if "df_data" not in st.session_state:
     st.session_state["df_data"] = None
 if "csv_name" not in st.session_state:
     st.session_state["csv_name"] = None
+# if "channel" not in st.session_state:
+#     st.session_state["channel"] = 0
+# if "length" not in st.session_state:
+#     st.session_state["length"] = 128
 
 with st.sidebar:
     st.title("数据接收处理")
@@ -134,56 +154,51 @@ with st.sidebar:
             st.error("端口号不能为空")
         else:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.bind(('0.0.0.0', 8080))
+                # sock.bind(('0.0.0.0', 8080))
                 first_dialogue_data = f_header + b'\x01'
                 first_response = send_and_receive_udp(sock, first_dialogue_data, (ip_address, port), timeout)
                 
                 if first_response:
                     header, command, mac, ip = parse_response(first_response)
-                    hex_channel = '{:02x}'.format(channel)
-                    hex_length = '{:08x}'.format(length)
-                    st.session_state["channel"] = ''.join([hex_channel[i:i+2] for i in range(0, len(hex_channel), 2)])
-                    st.session_state["length"] = ''.join([hex_length[i:i+2] for i in range(0, len(hex_length), 2)])
                     st.session_state["mac"] = mac
-                    st.session_state["ip"] = ip
-                    
-                    second_dialogue_data = f_header + b'\x03' + bytes.fromhex(hz_dict[sample_rate])
-                    second_response = send_and_receive_udp(sock, second_dialogue_data, (ip_address, port), timeout)
-                    
-                    if second_response:
-                        st.session_state["connection_verified"] = True
-                        st.session_state["timeout"] = timeout
-                        st.success("连接成功，可以开始采集数据")
-                    else:
-                        st.session_state["connection_verified"] = False
+                    st.session_state["ip"] = ip                  
+                    st.session_state["connection_verified"] = True
+                    st.session_state["timeout"] = timeout
+                    st.success("连接成功，可以开始采集数据")
                 else:
                     st.session_state["connection_verified"] = False
 
     if st.session_state["connection_verified"]:
-        left,mid,right = st.columns(3)
-        with left:
-            if st.button('采集状态 ON'):
-                new_status = "on"
-                send_collect_option(new_status)
-        with mid:
-            if st.button('采集状态 OFF'):
-                new_status = "off"
-                send_collect_option(new_status)
-        with right:
-            if st.session_state["sampling_status"] == "on":
-                st.color_picker("开", "#00FF00")
-            else:
-                st.color_picker("关", "#FF0000")
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
+            # sock.bind(('0.0.0.0', 8080))
+            left,mid,right = st.columns(3)
+            with left:
+                if st.button('采集状态 ON'):
+                    new_status = "on"
+                    send_collect_option(new_status,sock)
+            with mid:
+                if st.button('采集状态 OFF'):
+                    new_status = "off"
+                    send_collect_option(new_status,sock)
+            with right:
+                if st.session_state["sampling_status"] == "on":
+                    st.color_picker("开", "#00FF00")
+                else:
+                    st.color_picker("关", "#FF0000")
 
-        time.sleep(0.5)
+            time.sleep(0.5)
 
-        if st.button("发送数据") :
-            if st.session_state["sampling_status"] == "on":
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                    sock.bind(('0.0.0.0', 8080))
-                    st.session_state["df_data"] = run_sampling(sock, (ip_address, port), f_header)
-            else:
-                st.warning("请先开启采集器")
+            if st.button("发送数据") :
+                # 如果采样器开启并且第二次响应成功，发送数据
+                if st.session_state["sampling_status"] == "on" :
+                    send_data_32(sock)                    
+                else:
+                    st.warning("请先开启采集器")
+        
+            while st.session_state["sampling_status"] == "on":                
+                time.sleep(40)
+                send_data_32(sock)
+
     else:
         st.info("请先点击连接按钮并确保连接成功")
     
