@@ -113,6 +113,65 @@ def send_data_32(sock):
     else:
         st.warning("采集频率设置失败")
 
+def show_chart(step):
+    # 获取会话状态中的数据
+    result_df = st.session_state.get("df_data", None)
+    
+    # 检查数据是否存在
+    if result_df is not None:
+        # 计算最大值、最小值、平均值和最大值与最小值的差
+        max_value = result_df["Decimal Value"].max()
+        min_value = result_df["Decimal Value"].min()
+        mean_value = result_df["Decimal Value"].mean()
+        diff_value = max_value - min_value
+        
+        # 创建 Plotly 折线图
+        fig = go.Figure(data=go.Scatter(x=result_df["Index"], y=result_df["Decimal Value"], mode='lines', name='lines'))
+        
+        # 添加最大值、最小值、平均值和差值的直线
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[max_value, max_value], 
+                                 mode='lines', 
+                                 name='Max Value', 
+                                 line=dict(color='red', dash='dash')))
+        
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[min_value, min_value], 
+                                 mode='lines', 
+                                 name='Min Value', 
+                                 line=dict(color='blue', dash='dash')))
+        
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[mean_value, mean_value], 
+                                 mode='lines', 
+                                 name='Mean Value', 
+                                 line=dict(color='green', dash='dash')))
+        
+        # 设置 x 轴和 y 轴
+        fig.update_layout(
+            title='Decimal Value over Index',
+            xaxis_title='Index',
+            yaxis_title='Decimal Value',
+            yaxis=dict(tickformat='.4f')  # 保留到小数点后四位
+        )
+        
+        # 如果存在 step 变量并且大于 0，设置 y 轴的范围
+        step = st.session_state.get("step", 0)
+        if step > 0:
+            max_y = step * len(result_df) // 10
+            fig.update_yaxes(range=[13, max_y])
+        
+        # 在 Streamlit 应用中显示图表
+        st.plotly_chart(fig, use_container_width=True)
+        # 将各个值显示在屏幕上并保留四位小数
+        st.write(f"最大值: {max_value:.4f}")
+        st.write(f"最小值: {min_value:.4f}")
+        st.write(f"平均值: {mean_value:.4f}")
+        st.write(f"峰峰值: {diff_value:.4f}")
+    else: 
+        # 如果没有数据，显示警告信息
+        st.warning("请先发送数据")
+
 st.set_page_config(layout="wide")
 
 if "sampling_status" not in st.session_state:
@@ -257,66 +316,7 @@ with st.sidebar:
             st.warning("CSV目录不存在")
 
 st.title('数据可视化')
-
+# 设定纵坐标单位长度
 step = st.number_input("输入纵坐标单位长度:", min_value=0.0000, max_value=20.0000, value=0.0000, step=0.0001, format="%.4f")
-
-if st.button('Convert'):
-    # 获取会话状态中的数据
-    result_df = st.session_state.get("df_data", None)
-    
-    # 检查数据是否存在
-    if result_df is not None:
-        # 计算最大值、最小值、平均值和最大值与最小值的差
-        max_value = result_df["Decimal Value"].max()
-        min_value = result_df["Decimal Value"].min()
-        mean_value = result_df["Decimal Value"].mean()
-        diff_value = max_value - min_value
-        
-        # 创建 Plotly 折线图
-        fig = go.Figure(data=go.Scatter(x=result_df["Index"], y=result_df["Decimal Value"], mode='lines', name='lines'))
-        
-        # 添加最大值、最小值、平均值和差值的直线
-        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
-                                 y=[max_value, max_value], 
-                                 mode='lines', 
-                                 name='Max Value', 
-                                 line=dict(color='red', dash='dash')))
-        
-        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
-                                 y=[min_value, min_value], 
-                                 mode='lines', 
-                                 name='Min Value', 
-                                 line=dict(color='blue', dash='dash')))
-        
-        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
-                                 y=[mean_value, mean_value], 
-                                 mode='lines', 
-                                 name='Mean Value', 
-                                 line=dict(color='green', dash='dash')))
-        
-        # 设置 x 轴和 y 轴
-        fig.update_layout(
-            title='Decimal Value over Index',
-            xaxis_title='Index',
-            yaxis_title='Decimal Value',
-            yaxis=dict(tickformat='.4f')  # 保留到小数点后四位
-        )
-        
-        # 如果存在 step 变量并且大于 0，设置 y 轴的范围
-        step = st.session_state.get("step", 0)
-        if step > 0:
-            max_y = step * len(result_df) // 10
-            fig.update_yaxes(range=[13, max_y])
-        
-        # 在 Streamlit 应用中显示图表
-        st.plotly_chart(fig, use_container_width=True)
-        # 将各个值显示在屏幕上并保留四位小数
-        st.write(f"最大值: {max_value:.4f}")
-        st.write(f"最小值: {min_value:.4f}")
-        st.write(f"平均值: {mean_value:.4f}")
-        st.write(f"峰峰值: {diff_value:.4f}")
-    else: 
-        # 如果没有数据，显示警告信息
-        st.warning("请先发送数据")
-else:
-    st.info("点击上方按钮来绘制折线图")
+# 显示图表
+show_chart(step)
