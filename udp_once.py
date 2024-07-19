@@ -13,13 +13,16 @@ import threading
 def send_and_receive_udp(sock, data, address, timeout):
     sock.settimeout(timeout)
     all_data = b''
-    buffer_size = 1024
+    buffer_size = 65535
     try:
         st.write(f"Sending to address: {address}")
         sock.sendto(data, address)
+        total_received_length = 0
         while True:
             response, _ = sock.recvfrom(buffer_size)
             all_data += response
+            total_received_length += len(response)
+            st.write(f"Received {len(response)} bytes, Total received: {total_received_length} bytes")
             if len(response) < buffer_size:
                 break
         st.write(f"Request: {binascii.hexlify(data).decode()}")
