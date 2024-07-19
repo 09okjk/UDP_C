@@ -92,7 +92,7 @@ def create_zip_file(folder_path):
 
 def send_collect_option(new_status):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
-        # sock.bind(('0.0.0.0', 8080))
+        sock.bind(('0.0.0.0', 8080))
         third_dialogue_data = f_header + b'\x04' + bytes.fromhex(switch_dict[new_status])
         status = parse_response(send_and_receive_udp(sock, third_dialogue_data, (ip_address, port), st.session_state["timeout"]))
         st.session_state["sampling_status"] = "on" if status == "00" else "off"
@@ -134,7 +134,7 @@ with st.sidebar:
             st.error("端口号不能为空")
         else:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                # sock.bind(('0.0.0.0', 8080))
+                sock.bind(('0.0.0.0', 8080))
                 first_dialogue_data = f_header + b'\x01'
                 first_response = send_and_receive_udp(sock, first_dialogue_data, (ip_address, port), timeout)
                 
@@ -180,7 +180,7 @@ with st.sidebar:
         if st.button("发送数据") :
             if st.session_state["sampling_status"] == "on":
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                    # sock.bind(('0.0.0.0', 8080))
+                    sock.bind(('0.0.0.0', 8080))
                     st.session_state["df_data"] = run_sampling(sock, (ip_address, port), f_header)
             else:
                 st.warning("请先开启采集器")
