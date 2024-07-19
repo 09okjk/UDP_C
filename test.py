@@ -29,4 +29,17 @@ def hex_to_decimal_and_save(data_packet, output_file):
 data_packet = "000211320002112000021126000211360002112c0002113b0002113d0002116200021182000211740002113e0002112f000211610002115b0002116400021165000211230002110b00021140000211610002113a"
 output_file = "output.csv"
 
-hex_to_decimal_and_save(data_packet, output_file)
+# hex_to_decimal_and_save(data_packet, output_file)
+
+# ----------------------------------------------------------------------------------------------------------------
+
+# 十进制数
+decimal_number = 128
+
+# 格式化为十六进制字符串，填充零以确保至少8个字符（4字节）
+hex_string = '{:02x}'.format(decimal_number)
+
+# 将每个字节转换为Python字符串中的字节表示形式
+formatted_hex_string = ''.join([hex_string[i:i+2] for i in range(0, len(hex_string), 2)])
+
+print(formatted_hex_string)

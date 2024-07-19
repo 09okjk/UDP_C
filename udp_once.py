@@ -13,13 +13,17 @@ from io import BytesIO
 def send_and_receive_udp(sock, data, address, timeout):
     sock.settimeout(timeout)
     try:
+        st.write(f"Sending to address: {address}")
         sock.sendto(data, address)
-        response, _ = sock.recvfrom(1024)
-        print(f'Request: {binascii.hexlify(data).decode()}')
-        print(f'Response: {binascii.hexlify(response).decode()}')
+        response, address = sock.recvfrom(1024)
+        st.write(f"Request: {binascii.hexlify(data).decode()}")
+        st.write(f"Response: {binascii.hexlify(response).decode()}")
         return response
     except socket.timeout:
         st.warning(f'等待时间超过 {timeout} 秒，未收到回复，请重试。')
+        return None
+    except Exception as e:
+        st.error(f"发送数据时出错: {e}")
         return None
 
 def parse_response(response):
@@ -27,11 +31,9 @@ def parse_response(response):
     header = hex_response[:4]
     command = hex_response[4:6]
     if command == '01':
-        channel = hex_response[6:8] if len(hex_response) > 8 else '00'
-        length = hex_response[8:16] if len(hex_response) > 16 else '00000000'
         mac = hex_response[16:28] if len(hex_response) > 28 else '000000000000'
         ip = hex_response[28:40] if len(hex_response) > 60 else '00000000'
-        return header, command, channel, length, mac, ip
+        return header, command, mac, ip
     elif command == '04':
         switch_status = hex_response[6:8]
         return switch_status
@@ -46,7 +48,8 @@ def log_data_to_file(timestamp, channel, length, data):
         file.write("\n")
 
 def run_sampling(sock, address, f_header):
-    fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
+    # fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
+    fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + b'\x00\x00\x00\xe0' + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
     fourth_response = send_and_receive_udp(sock, fourth_dialogue_data, address, st.session_state["timeout"])
     if fourth_response:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -87,6 +90,13 @@ def create_zip_file(folder_path):
                 zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), folder_path))
     return s.getvalue()
 
+def send_collect_option(new_status):
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
+        # sock.bind(('0.0.0.0', 8080))
+        third_dialogue_data = f_header + b'\x04' + bytes.fromhex(switch_dict[new_status])
+        status = parse_response(send_and_receive_udp(sock, third_dialogue_data, (ip_address, port), st.session_state["timeout"]))
+        st.session_state["sampling_status"] = "on" if status == "00" else "off"
+
 st.set_page_config(layout="wide")
 
 if "sampling_status" not in st.session_state:
@@ -106,8 +116,10 @@ with st.sidebar:
     col1, col2 = st.columns(2)
     with col1:
         ip_address = st.text_input("输入IP地址:")
+        channel = st.number_input("输入通道号:", value=0)
     with col2:
-        port = st.number_input("输入端口号:", min_value=1, max_value=65535, value=1234)
+        port = st.number_input("输入端口号:", min_value=1, max_value=65535, value=8080)
+        length = st.number_input("输入数据长度:", value=128)
     timeout = st.number_input("设置数据接收超时时间(秒):", min_value=1, value=30)
     sample_rate = st.selectbox("选择采样频率", ['256k', '128k', '64k', '8k'])
 
@@ -122,14 +134,16 @@ with st.sidebar:
             st.error("端口号不能为空")
         else:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                # sock.bind(('0.0.0.0', 8080))
                 first_dialogue_data = f_header + b'\x01'
                 first_response = send_and_receive_udp(sock, first_dialogue_data, (ip_address, port), timeout)
                 
                 if first_response:
-                    header, command, channel, length, mac, ip = parse_response(first_response)
-                    
-                    st.session_state["channel"] = channel
-                    st.session_state["length"] = length
+                    header, command, mac, ip = parse_response(first_response)
+                    hex_channel = '{:02x}'.format(channel)
+                    hex_length = '{:08x}'.format(length)
+                    st.session_state["channel"] = ''.join([hex_channel[i:i+2] for i in range(0, len(hex_channel), 2)])
+                    st.session_state["length"] = ''.join([hex_length[i:i+2] for i in range(0, len(hex_length), 2)])
                     st.session_state["mac"] = mac
                     st.session_state["ip"] = ip
                     
@@ -146,23 +160,30 @@ with st.sidebar:
                     st.session_state["connection_verified"] = False
 
     if st.session_state["connection_verified"]:
-        if st.button('切换采集状态(开/关)'):
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock: 
-                new_status = "off" if st.session_state["sampling_status"] == "on" else "on"
-                third_dialogue_data = f_header + b'\x04' + bytes.fromhex(switch_dict[new_status])
-                status = parse_response(send_and_receive_udp(sock, third_dialogue_data, (ip_address, port), st.session_state["timeout"]))
-                
-                if status == "00":
-                    st.session_state["sampling_status"] = "on"
-                    st.success("采集器开启")
-                elif status == "01":
-                    st.session_state["sampling_status"] = "off"
-                    st.warning("采集器关闭")
+        left,mid,right = st.columns(3)
+        with left:
+            if st.button('采集状态 ON'):
+                new_status = "on"
+                send_collect_option(new_status)
+        with mid:
+            if st.button('采集状态 OFF'):
+                new_status = "off"
+                send_collect_option(new_status)
+        with right:
+            if st.session_state["sampling_status"] == "on":
+                st.color_picker("开", "#00FF00")
+            else:
+                st.color_picker("关", "#FF0000")
 
-                time.sleep(0.5)
-        if st.button("发送数据") and st.session_state["sampling_status"] == "on":
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                st.session_state["df_data"] = run_sampling(sock, (ip_address, port), f_header)
+        time.sleep(0.5)
+
+        if st.button("发送数据") :
+            if st.session_state["sampling_status"] == "on":
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    # sock.bind(('0.0.0.0', 8080))
+                    st.session_state["df_data"] = run_sampling(sock, (ip_address, port), f_header)
+            else:
+                st.warning("请先开启采集器")
     else:
         st.info("请先点击连接按钮并确保连接成功")
     
@@ -224,23 +245,45 @@ st.title('数据可视化')
 
 step = st.number_input("输入纵坐标单位长度:", min_value=0.0000, max_value=20.0000, value=0.0000, step=0.0001, format="%.4f")
 
-# 按钮用于触发图表绘制
 if st.button('Convert'):
     # 获取会话状态中的数据
     result_df = st.session_state.get("df_data", None)
     
     # 检查数据是否存在
     if result_df is not None:
+        # 计算最大值、最小值、平均值和最大值与最小值的差
+        max_value = result_df["Decimal Value"].max()
+        min_value = result_df["Decimal Value"].min()
+        mean_value = result_df["Decimal Value"].mean()
+        diff_value = max_value - min_value
         
         # 创建 Plotly 折线图
         fig = go.Figure(data=go.Scatter(x=result_df["Index"], y=result_df["Decimal Value"], mode='lines', name='lines'))
+        
+        # 添加最大值、最小值、平均值和差值的直线
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[max_value, max_value], 
+                                 mode='lines', 
+                                 name='Max Value', 
+                                 line=dict(color='red', dash='dash')))
+        
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[min_value, min_value], 
+                                 mode='lines', 
+                                 name='Min Value', 
+                                 line=dict(color='blue', dash='dash')))
+        
+        fig.add_trace(go.Scatter(x=[result_df["Index"].min(), result_df["Index"].max()], 
+                                 y=[mean_value, mean_value], 
+                                 mode='lines', 
+                                 name='Mean Value', 
+                                 line=dict(color='green', dash='dash')))
         
         # 设置 x 轴和 y 轴
         fig.update_layout(
             title='Decimal Value over Index',
             xaxis_title='Index',
             yaxis_title='Decimal Value',
-            xaxis=dict(tickmode='linear'),
             yaxis=dict(tickformat='.4f')  # 保留到小数点后四位
         )
         
@@ -252,6 +295,11 @@ if st.button('Convert'):
         
         # 在 Streamlit 应用中显示图表
         st.plotly_chart(fig, use_container_width=True)
+        # 将各个值显示在屏幕上并保留四位小数
+        st.write(f"最大值: {max_value:.4f}")
+        st.write(f"最小值: {min_value:.4f}")
+        st.write(f"平均值: {mean_value:.4f}")
+        st.write(f"峰峰值: {diff_value:.4f}")
     else: 
         # 如果没有数据，显示警告信息
         st.warning("请先发送数据")
