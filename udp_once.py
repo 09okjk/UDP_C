@@ -21,8 +21,8 @@ def send_and_receive_udp(sock, data, address, timeout):
             response, _ = sock.recvfrom(buffer_size)
             b_response = binascii.hexlify(response).decode()
             if all_data != b'':
-                b_response = b_response[16:]
-                all_data += bytes.fromhex(b_response)
+                b_data = b_response[16:]
+                all_data += bytes.fromhex(b_data)
             else:
                 all_data += response
             total_received_length += len(response)
