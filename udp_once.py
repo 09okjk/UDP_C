@@ -8,7 +8,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import zipfile
 from io import BytesIO
-import threading
 
 def send_and_receive_udp(sock, data, address, timeout):
     sock.settimeout(timeout)
@@ -20,10 +19,17 @@ def send_and_receive_udp(sock, data, address, timeout):
         total_received_length = 0
         while True:
             response, _ = sock.recvfrom(buffer_size)
+            b_response = binascii.hexlify(response).decode()
+            if all_data != b'':
+                b_response = b_response[16:]
+                all_data += bytes.fromhex(b_response)
             all_data += response
             total_received_length += len(response)
+            print(f"b_response: {b_response}")
             st.write(f"Received {len(response)} bytes, Total received: {total_received_length} bytes")
-            if len(response) < buffer_size:
+            if b_response[4:6] != '02':
+                break
+            if total_received_length >= length*4:
                 break
         st.write(f"Request: {binascii.hexlify(data).decode()}")
         st.write(f"Response: {binascii.hexlify(all_data).decode()}")
@@ -57,7 +63,6 @@ def log_data_to_file(timestamp, channel, length, data):
         file.write("\n")
 
 def run_sampling(sock, address, f_header):
-    # fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
     fourth_dialogue_data = f_header + b'\x02' + bytes.fromhex(st.session_state["channel"]) + bytes.fromhex(st.session_state["length"]) + bytes.fromhex(st.session_state["mac"]) + bytes.fromhex(st.session_state["ip"])
     fourth_response = send_and_receive_udp(sock, fourth_dialogue_data, address, st.session_state["timeout"])
     if fourth_response:
@@ -137,10 +142,8 @@ if "df_data" not in st.session_state:
     st.session_state["df_data"] = None
 if "csv_name" not in st.session_state:
     st.session_state["csv_name"] = None
-# if "channel" not in st.session_state:
-#     st.session_state["channel"] = 0
-# if "length" not in st.session_state:
-#     st.session_state["length"] = 128
+if "f_header" not in st.session_state:
+    st.session_state["f_header"] = b'\x29\x5A\x00\x00\x00\x00\x00\x80'
 
 with st.sidebar:
     st.title("数据接收处理")
@@ -149,11 +152,12 @@ with st.sidebar:
     with col1:
         ip_address = st.text_input("输入IP地址:")
         channel = st.number_input("输入通道号:", value=0)
+        # timeout = st.number_input("设置数据接收超时时间(秒):", min_value=1, value=30)
     with col2:
         port = st.number_input("输入端口号:", min_value=1, max_value=65535, value=8080)
-        length = st.number_input("输入数据长度:", value=128)
-    timeout = st.number_input("设置数据接收超时时间(秒):", min_value=1, value=30)
-    # sleep_time = st.number_input("设置发送间隔时间(秒):", min_value=1, value=40)
+        length = st.number_input("输入数据长度:", value=21)
+        # sleep_time = st.number_input("设置发送间隔时间(秒):", min_value=1, value=40)
+    timeout = st.number_input("设置数据接收超时时间(秒):", min_value=1, value=30)    
     sample_rate = st.selectbox("选择采样频率", ['256k', '128k', '64k', '8k'])
 
     f_header = b'\x28\x5A'
@@ -200,7 +204,7 @@ with st.sidebar:
                     st.color_picker("关", "#FF0000")
 
             time.sleep(0.5)
-            send_model = st.selectbox("发送模式", ['手动', '自动'])
+            send_model = st.selectbox("发送模式", ['手动', '自动(未实装)'])
             if send_model == '手动':
                 sock.close()
                 if st.button("发送数据") :
@@ -209,11 +213,6 @@ with st.sidebar:
                         st.session_state["df_data"] = send_data_32()                    
                     else:
                         st.warning("请先开启采集器")
-            # elif send_model == '自动':
-            #     sock.close()
-            #     while st.session_state["sampling_status"] == "on":
-            #         thread = threading.Thread(target=send_data_32_repeat, args=(sleep_time,))
-            #         st.session_state["df_data"] = thread.start()
 
     else:
         st.info("请先点击连接按钮并确保连接成功")
