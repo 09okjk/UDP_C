@@ -23,16 +23,20 @@ def send_and_receive_udp(sock, data, address, timeout):
             if all_data != b'':
                 b_response = b_response[16:]
                 all_data += bytes.fromhex(b_response)
-            all_data += response
+            else:
+                all_data += response
             total_received_length += len(response)
-            print(f"b_response: {b_response}")
-            st.write(f"Received {len(response)} bytes, Total received: {total_received_length} bytes")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.write(f"Received {len(response)} bytes, Total received: {total_received_length} bytes,Length: {length*4}")
+            log_info_to_file(timestamp, "b_response: " + b_response)
+            log_info_to_file(timestamp, f"Received {len(response)} bytes, Total received: {total_received_length} bytes")
             if b_response[4:6] != '02':
                 break
             if total_received_length >= length*4:
                 break
-        st.write(f"Request: {binascii.hexlify(data).decode()}")
-        st.write(f"Response: {binascii.hexlify(all_data).decode()}")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_info_to_file(timestamp, "Request: " + binascii.hexlify(data).decode())
+        log_info_to_file(timestamp, "Response: " + binascii.hexlify(all_data).decode())
         return all_data
     except socket.timeout:
         st.warning(f'等待时间超过 {timeout} 秒，未收到回复，请重试。')
@@ -60,6 +64,12 @@ def log_data_to_file(timestamp, channel, length, data):
         file.write(f"Channel: {channel}\n")
         file.write(f"Length: {length}\n")
         file.write(f"Data Packet: {data}\n")
+        file.write("\n")
+
+def log_info_to_file(timestamp, data):
+    with open("log.txt", "a") as file:
+        file.write(f"{timestamp}\n")
+        file.write(f"INFO: {data}\n")
         file.write("\n")
 
 def run_sampling(sock, address, f_header):
