@@ -154,6 +154,8 @@ if "csv_name" not in st.session_state:
     st.session_state["csv_name"] = None
 if "f_header" not in st.session_state:
     st.session_state["f_header"] = b'\x29\x5A\x00\x00\x00\x00\x00\x80'
+if "current_socket" not in st.session_state:
+    st.session_state["current_socket"] = None
 
 with st.sidebar:
     st.title("数据接收处理")
@@ -175,6 +177,8 @@ with st.sidebar:
     switch_dict = {'on': '00', 'off': '01'}
 
     if st.button('连接'):
+        if st.session_state["current_socket"] is not None:
+            st.session_state["current_socket"].close()
         if not ip_address:
             st.error("IP地址不能为空")
         elif port == 0:
@@ -182,6 +186,7 @@ with st.sidebar:
         else:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                 sock.bind(('0.0.0.0', 8080))
+                st.session_state["current_socket"] = sock
                 first_dialogue_data = f_header + b'\x01'
                 first_response = send_and_receive_udp(sock, first_dialogue_data, (ip_address, port), timeout)
                 
@@ -219,10 +224,11 @@ with st.sidebar:
                 sock.close()
                 if st.button("发送数据") :
                     # 如果采样器开启并且第二次响应成功，发送数据
-                    if st.session_state["sampling_status"] == "on" :
-                        st.session_state["df_data"] = send_data_32()                    
-                    else:
-                        st.warning("请先开启采集器")
+                    # if st.session_state["sampling_status"] == "on" :
+                    #     st.session_state["df_data"] = send_data_32()                    
+                    # else:
+                    #     st.warning("请先开启采集器")
+                    st.session_state["df_data"] = send_data_32()  
 
     else:
         st.info("请先点击连接按钮并确保连接成功")
